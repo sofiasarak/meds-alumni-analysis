@@ -1,0 +1,21 @@
+---
+title: "Job Search Length Analysis"
+author: "Sofia Sarak"
+format: html
+editor: visual
+---
+
+```{r}
+#| message: false
+# load necessary libraries
+library(tidyverse)
+library(here)
+```
+
+
+```{r}
+#| message: false
+# read in data
+data <- read_csv(here("data", "meds_2020-26_placement_data.csv"))
+```
+
