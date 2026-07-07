@@ -7,15 +7,151 @@ editor: visual
 
 ```{r}
 #| message: false
+#| warning: false
 # load necessary libraries
 library(tidyverse)
 library(here)
+library(janitor)
 ```
 
 
 ```{r}
 #| message: false
 # read in data
-data <- read_csv(here("data", "meds_2020-26_placement_data.csv"))
+data <- read_csv(here("data", "meds_2020-26_placement_data.csv")) %>% 
+  clean_names()
+```
+
+## Number of Placements
+
+### Data Wrangling
+
+Encode "N/A" as actual NA values.
+
+```{r}
+data <- data %>% 
+  
+  # replace "N/A" string with NA value, in placement columns
+  mutate(across(initial_placement_job_title:fourth_placement_end_date, ~na_if(.x, "N/A"))) %>% 
+
+  # replace "Unknown" string with NA value, in placement columns
+  mutate(across(initial_placement_job_title:fourth_placement_end_date, ~na_if(.x, "Unknown")))
+```
+
+Create binary variable to describe job placement. If an individual has a fourth placement, the value for that column is 1. If an individual only has an initial placement, the initial column is 1, and the rest (second, third, and fourth placement) are 0. In this way, summing across binary columns can quickly reveal the number of positions held.
+
+```{r}
+# create placement data frame (for binary vars)
+placement <- data %>% 
+  
+  # keep only necessary columns (a placement job title signifies placement)
+  select(year, last_name, first_name, 
+         initial_placement_job_title, second_placement_job_title, 
+         third_placement_job_title, fourth_placement_job_title) %>% 
+  
+  # create binary columns based on NA values
+  mutate(
+     # initial placement
+    initial_bin = case_when(is.na(initial_placement_job_title) ~ 0,
+                                 .default = 1),
+    
+    # second placement
+    second_bin = case_when(is.na(second_placement_job_title) ~ 0,
+                                 .default = 1),
+    
+    # third placement
+    third_bin = case_when(is.na(third_placement_job_title) ~ 0,
+                                 .default = 1),
+    
+    # fourth placement
+    fourth_bin = case_when(is.na(fourth_placement_job_title) ~ 0,
+                                 .default = 1)
+    ) %>% 
+
+# keep only identifiers and binary vars
+  
+  select(year, last_name, first_name, initial_bin, second_bin, third_bin, fourth_bin)
+```
+
+Find the total number of positions per individual (by summing binary variables). This can offer insights on career progression within an organization, environmental data science market dynamics, or even job satisfaction.
+
+```{r}
+placement <- placement %>% 
+  
+  # sum columns for total positions
+  mutate(total_placements = rowSums(pick(ends_with("bin")), na.rm = TRUE))
+```
+
+This value is of course very dependent on the number of years since the individual's graduation. We can find an average number of jobs per year value by 1) Calculating years since graduation (2026 - `year`), and 2) Dividing `total_placements` by `year`.
+
+```{r}
+placement <- placement %>% 
+  
+  mutate(
+    
+    # calculate number of years since grad (years in workforce)
+    workforce_years = 2026 - year,
+         
+    # divide placements by number of years in workforce
+    placements_per_year = case_when(
+      
+      # for MEDS class of 2026, default to total placement (otherwise, 1/0 = Inf)
+      workforce_years == 0 ~ total_placements,
+      
+      # division for other years
+      .default = total_placements/workforce_years))
+```
+
+
+### Visualization
+
+```{r}
+# save Bren blue
+blue <- "#14375C"
+```
+
+
+What is the distribution of career swicthes among graduates?
+```{r}
+placement %>% 
+  
+  # remove individuals with no placements
+  filter(total_placements != 0) %>% 
+  
+  # plot distribution
+  ggplot(aes(placements_per_year)) +
+    geom_histogram(fill = blue) +
+  labs(x = "Number of Placements per Year",
+       y = "Frequency",
+       title = "Job Movement (?) in MEDS Graduates") +
+  theme_minimal()
+```
+The majority of graduates switch positions once a year or less.
+
+## Length of Job Search
+
+### Data Wrangling
+
+In order to estimate the length of each graduates job search, we use just the `start_date` and `end_date` columns for each placement. We can then add a graduation column (using June 15th as a default graduation date), and calculating the difference between initial placement start date and graduation.
+
+These results may not be completely accurate, as a jobs could have been secured weeks, if not months, before graduation.
+
+```{r}
+search <- data %>% 
+  
+  # select necessary columns
+  select(year, last_name, first_name, ends_with("date")) %>% 
+  
+  # transform date columns to date format
+  mutate(across(ends_with("date"), my)) %>% 
+  
+  # add column for graduation day approximation (06 + `year` + 15)
+  mutate(grad_date = paste0("06/", year, "/15"),
+         grad_date = myd(grad_date)) %>% 
+  
+  # calculate amount of time between graduation and initial placement
+  mutate(initial_search = case_when(
+    initial_placement_start_date - grad_date == "-14 days" ~ 0,
+    .default = initial_placement_start_date - grad_date))
 ```
 
