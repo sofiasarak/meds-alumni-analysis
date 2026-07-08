@@ -123,13 +123,30 @@ placement %>%
   
   # plot distribution
   ggplot(aes(placements_per_year)) +
-    geom_histogram(fill = blue) +
+    geom_bar(fill = blue) +
   labs(x = "Number of Placements per Year",
-       y = "Frequency",
+       y = "Number of Graduates",
+       title = "Job Mobility in MEDS Graduates (Yearly Average)") +
+  theme_minimal()
+```
+The majority of graduates switch positions once a year or less. This is skewed heavily by graduates who have only had a year or two in the workforce.
+
+How many job switches do MEDS alumni have generally?
+```{r}
+placement %>% 
+  
+  # remove individuals with no placements
+  filter(total_placements != 0) %>% 
+  
+  # plot distribution
+  ggplot(aes(total_placements)) +
+    geom_bar(fill = blue,) +
+  labs(x = "Number of Placements/Promtotions Since Graduation",
+       y = "Number of Graduates",
        title = "Job Mobility in MEDS Graduates") +
   theme_minimal()
 ```
-The majority of graduates switch positions once a year or less.
+The majority of MEDS graduates have held 1 or 2 roles since graduation. Again, this number of likely very dependent on the number of years an alumn has had in the workforce.
 
 ### Class of 2022
 
@@ -283,7 +300,53 @@ search <- data %>%
 
 ### Summary Stats and Viz
 
-```{r}
+How many roles where found/started a month or more after graduation?
 
+```{r}
+# Select only for positions that were found after graduation (> 0 days), then find the number of observations
+after_grad <- search %>% 
+  filter(initial_search_days > 0)
+after_grad <- nrow(after_grad)
+
+# Select only for positions that were found before graduation (= 0 days), then find the number of observations
+before_grad <- search %>% 
+  filter(initial_search_days == 0)
+before_grad <- nrow(before_grad)
+
+# For a more accurate representation of job search length, we only select for those individuals that have found positions/the positions are publicly available
+search_non_na <- search %>% 
+  filter(!is.na(initial_search_days))
+
+print(paste0("Out of all MEDS graduates with publicly-available placements, ", after_grad, " (", round((after_grad/nrow(search_non_na))*100), "%) ", "of roles were found after graduation. On the other hand, ", before_grad, " were found before graduation."))
+```
+
+Maximum job search length:
+
+```{r}
+print(paste("The maximum job search length was", max(search$initial_search_days, na.rm = TRUE), "days, or about", round(max(search$initial_search_days, na.rm = TRUE)/30), "months." ))
+```
+
+Average job search length:
+
+```{r}
+print(paste("On average, for individuals who did not secure a role before graduation, the job search took", round(mean(search$initial_search_days, na.rm = TRUE)), "days, or", round(mean(search$initial_search_days, na.rm = TRUE)/30), "months."))
+```
+
+Distribution of initial job search lengths:
+
+```{r}
+search_non_na %>% 
+  ggplot(aes(x = initial_search_days)) + 
+  geom_histogram(fill = blue) +
+  labs(x = "Initial Job Search Length (Days)",
+       y = "Number of Graduates",
+       title = "Distribution of Job Search Lengths in MEDS Graduates",
+       subtitle = "Average job search length of 62 days is shown in red") + 
+  theme_minimal() +
+  
+  # add line for average
+  geom_vline(xintercept = mean(search$initial_search_days, na.rm = TRUE),
+             color = "red",
+             linetype = "dashed")
 ```
 
