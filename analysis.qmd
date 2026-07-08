@@ -5,6 +5,10 @@ format: html
 editor: visual
 ---
 
+The following document utilizes the MEDS alumni database to perform analyses exploring job mobility and length of job search.
+
+## Setup
+
 ```{r}
 #| message: false
 #| warning: false
@@ -14,17 +18,12 @@ library(here)
 library(janitor)
 ```
 
-
 ```{r}
 #| message: false
 # read in data
 data <- read_csv(here("data", "meds_2020-26_placement_data.csv")) %>% 
   clean_names()
 ```
-
-## Number of Placements
-
-### Data Wrangling
 
 Encode "N/A" as actual NA values.
 
@@ -37,6 +36,10 @@ data <- data %>%
   # replace "Unknown" string with NA value, in placement columns
   mutate(across(initial_placement_job_title:fourth_placement_end_date, ~na_if(.x, "Unknown")))
 ```
+
+## Number of Placements
+
+### Data Wrangling
 
 Create binary variable to describe job placement. If an individual has a fourth placement, the value for that column is 1. If an individual only has an initial placement, the initial column is 1, and the rest (second, third, and fourth placement) are 0. In this way, summing across binary columns can quickly reveal the number of positions held.
 
@@ -111,7 +114,7 @@ blue <- "#14375C"
 ```
 
 
-What is the distribution of career swicthes among graduates?
+What is the distribution of career switches among graduates?
 ```{r}
 placement %>% 
   
@@ -123,10 +126,132 @@ placement %>%
     geom_histogram(fill = blue) +
   labs(x = "Number of Placements per Year",
        y = "Frequency",
-       title = "Job Movement (?) in MEDS Graduates") +
+       title = "Job Mobility in MEDS Graduates") +
   theme_minimal()
 ```
 The majority of graduates switch positions once a year or less.
+
+### Class of 2022
+
+Here, we isolate the Class of 2022 -- they are the first MEDS cohort, and have had 5 years in the workforce. We repeat the wrangling that is under the *Number of Placements* analysis, where we create a binary variable to find the number of position held.
+
+```{r}
+first_class <- data %>% 
+  
+  # filter for class of 2022
+  filter(year == 2022) %>% 
+  
+  # select necessary columns
+  select(year, last_name, first_name, initial_placement_organization_name, current_most_recent_position_organization_name,
+         
+         # placement columns to know if there were any promotions
+         initial_placement_job_title, second_placement_job_title, 
+         third_placement_job_title, fourth_placement_job_title) %>% 
+  
+  # create binary columns based on NA values SOMETHING WRONG WITH IT THIS TIME?
+  mutate(
+     # initial placement
+    initial_bin = case_when(is.na(initial_placement_job_title) ~ 0,
+                                 .default = 1),
+    
+    # second placement
+    second_bin = case_when(is.na(second_placement_job_title) ~ 0,
+                                 .default = 1),
+    
+    # third placement
+    third_bin = case_when(is.na(third_placement_job_title) ~ 0,
+                                 .default = 1),
+    
+    # fourth placement
+    fourth_bin = case_when(is.na(fourth_placement_job_title) ~ 0,
+                                 .default = 1)
+    ) %>% 
+  
+  select(year, last_name, first_name,  initial_placement_organization_name, current_most_recent_position_organization_name,
+         initial_bin, second_bin, third_bin, fourth_bin) 
+```
+
+Next, we explore how many MEDS graduates stay with the employer they had their initial placement with. A separate dataframe is created.
+
+```{r}
+# find individuals who are still at their original org
+original_org <- first_class %>% 
+  
+  # keep only obvs where initial and current org are the same
+  filter(initial_placement_organization_name == current_most_recent_position_organization_name) %>% 
+  
+  # add column for the total number of promotions/position changes
+  mutate(total_placements = rowSums(pick(ends_with("bin")), na.rm = TRUE))
+```
+
+In order to understand our findings, proportions are presented in print statements.
+
+```{r}
+# find number of individuals at original org, versus total number
+print(paste(nrow(original_org), "of the original", nrow(first_class), "MEDS graduates are still at their first placement."))
+print(paste("That's", nrow(original_org)/nrow(first_class) * 100, "% of MEDS 2022 graduates."))
+
+original_org_same_title <- original_org %>% 
+  filter(total_placements == 1)
+
+print(paste("Of this proportion,", nrow(original_org_same_title), "still hold the same job title."))
+```
+
+### Apply to all years (for fun)
+
+The Class of 2022 offers the most time in the workforce post-graduation. However, we can apply the analysis to all MEDS cohorts. Interpretations of these results should include the caveat that time plays a large factor in whether an individual is still with their original employer or not.
+
+```{r}
+placement_1 <- data %>% 
+  
+  select(year, last_name, first_name, initial_placement_organization_name, current_most_recent_position_organization_name,
+         
+         # placement columns to know if there were any promotions
+         initial_placement_job_title, second_placement_job_title, 
+         third_placement_job_title, fourth_placement_job_title) %>% 
+  
+  # create binary columns based on NA values
+  mutate(
+     # initial placement
+    initial_bin = case_when(is.na(initial_placement_job_title) ~ 0,
+                                 .default = 1),
+    
+    # second placement
+    second_bin = case_when(is.na(second_placement_job_title) ~ 0,
+                                 .default = 1),
+    
+    # third placement
+    third_bin = case_when(is.na(third_placement_job_title) ~ 0,
+                                 .default = 1),
+    
+    # fourth placement
+    fourth_bin = case_when(is.na(fourth_placement_job_title) ~ 0,
+                                 .default = 1)
+    ) %>% 
+
+# keep only identifiers and binary vars
+  
+   select(year, last_name, first_name,  initial_placement_organization_name, current_most_recent_position_organization_name,
+         initial_bin, second_bin, third_bin, fourth_bin) 
+
+# find individuals who are still at their original org
+original_org_all <- placement_1 %>% 
+  
+  # keep only obvs where initial and current org are the same
+  filter(initial_placement_organization_name == current_most_recent_position_organization_name) %>% 
+  
+  # add column for the total number of promotions/position changes
+  mutate(total_placements = rowSums(pick(ends_with("bin")), na.rm = TRUE))
+
+# find number of individuals at original org, versus total number
+print(paste(nrow(original_org_all), "of the original", nrow(placement_1), "MEDS graduates are still at their first placement."))
+print(paste("That's", round(nrow(original_org_all)/nrow(placement_1) * 100), "% of all MEDS graduates."))
+
+original_org_all_same_title <- original_org_all %>% 
+  filter(total_placements == 1)
+
+print(paste("Of this proportion,", nrow(original_org_all_same_title), "still hold the same job title."))
+```
 
 ## Length of Job Search
 
@@ -150,8 +275,15 @@ search <- data %>%
          grad_date = myd(grad_date)) %>% 
   
   # calculate amount of time between graduation and initial placement
-  mutate(initial_search = case_when(
-    initial_placement_start_date - grad_date == "-14 days" ~ 0,
-    .default = initial_placement_start_date - grad_date))
+  mutate(initial_search_days = as.numeric(initial_placement_start_date - grad_date),
+         
+         # fix so that if job was started in July (14 days or earlier), search length is actually 0
+         initial_search_days = if_else(initial_search_days < 15, 0, initial_search_days))
+```
+
+### Summary Stats and Viz
+
+```{r}
+
 ```
 
