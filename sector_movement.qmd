@@ -1,0 +1,87 @@
+---
+title: "Sector Movement"
+format: html
+editor: visual
+---
+
+```{r}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(here)
+library(janitor)
+library(ggalluvial)
+library(ggsankey)
+```
+
+```{r}
+#| message: false
+# read in data
+sector <- read_csv(here("data", "sectors.csv")) %>% 
+  
+  clean_names() %>% 
+  
+  # replace "N/A" string with NA value, in placement columns
+  mutate(across(everything(), ~na_if(.x, "N/A"))) %>% 
+
+  # replace "Unknown" string with NA value, in placement columns
+  mutate(across(everything(), ~na_if(.x, "Unknown"))) %>% 
+  
+  filter(!is.na(initial_placement))
+```
+
+```{r}
+# calculate frequency
+sector_freq <- sector %>% 
+  group_by(initial_sector, second_sector, third_sector, fourth_sector) %>% 
+  summarize(freq = n())
+```
+
+
+```{r}
+# alluvial plot attempt
+ggplot(data = sector_freq,
+       aes(axis1 = initial_sector, axis2 = second_sector, axis3 = third_sector, axis4 = fourth_sector,
+           y = freq)) +
+  #scale_x_discrete(limits = c("Class", "Sex", "Age"), expand = c(.2, .05)) +
+  xlab("Demographic") +
+  geom_alluvium(aes(fill = initial_sector)) +
+  geom_stratum() +
+  geom_text(stat = "stratum", aes(label = after_stat(stratum))) +
+  theme_minimal() +
+  ggtitle("Movement across sectors",
+          "MEDS alumni")
+```
+
+```{r}
+# convert data to sankey format
+sector_sankey <- sector %>% 
+  make_long(initial_sector, second_sector, third_sector, fourth_sector) 
+```
+
+```{r}
+pl <- ggplot(sector_sankey, aes(x = x
+                     , next_x = next_x
+                     , node = node
+                     , next_node = next_node
+                     , fill = factor(node)
+                     , label = node)
+             )
+pl <- pl +geom_sankey(flow.alpha = 0.5
+                      , node.color = "NA"
+                      ,show.legend = FALSE)
+pl <- pl + geom_sankey_label(size = 3, color = "black", fill= "white")
+pl <- pl + scale_x_discrete(labels = c("Initial\nPlacement", "Second\nPlacement", "Third\nPlacement", "Fourth\nPlacement"))
+pl <- pl +  theme_bw()
+pl <- pl + theme(legend.position = "none")
+pl <- pl +  theme(axis.title = element_blank()
+                  , axis.text.y = element_blank()
+                  , axis.ticks = element_blank()  
+                  , panel.grid = element_blank())
+pl <- pl + scale_fill_viridis_d(option = "inferno")
+pl <- pl + labs(title = "Movement across sectors")
+pl <- pl + labs(subtitle = "MEDS alumni")
+pl <- pl + labs(fill = 'Nodes')
+pl
+```
+
