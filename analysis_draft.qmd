@@ -1,12 +1,13 @@
 ---
-title: "analysis_draft"
+title: "MEDS Alumni Analysis"
+author: "Sofia Sarak"
 format: html
 ---
 
 The following document analyzes the careers of MEDS alumni after graduation. The following explorations were conducted:
 
 - the number of roles an individual has held since graduating (total as well as per year)
-- how many of the Class of 2022 are still at their first placement after graduation
+- how many of the Class of 2022 are still at their first placement
 - average length of job search
 - mobility between sectors
 - TO DO: time to first placement
@@ -19,6 +20,9 @@ The following document analyzes the careers of MEDS alumni after graduation. The
 #| warning: false
 #| echo: false
 
+# save Bren blue
+blue <- "#14375C"
+
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##                      data import and initial wrangling                   ----
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -27,6 +31,8 @@ The following document analyzes the careers of MEDS alumni after graduation. The
 library(tidyverse)
 library(here)
 library(janitor)
+library(patchwork)
+library(ggsankey)
 
 # read in data
 data <- read_csv(here("data", "meds_2020-26_placement_data.csv")) %>% 
@@ -41,6 +47,313 @@ data <- data %>%
 
   # replace "Unknown" string with NA value, in placement columns
   mutate(across(initial_placement_job_title:fourth_placement_end_date, ~na_if(.x, "Unknown")))
+
 ```
 
 ## Placements Since Graduation
+
+This analysis includes promotions within the same organization.
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##        placement data wrangling - create binary placement variable       ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# create placement data frame (for binary vars)
+placement <- data %>% 
+  
+  # keep only necessary columns (a placement job title signifies placement)
+  select(year, last_name, first_name, 
+         initial_placement_job_title, second_placement_job_title, 
+         third_placement_job_title, fourth_placement_job_title) %>% 
+  
+  # create binary columns based on NA values
+  mutate(
+     # initial placement
+    initial_bin = case_when(is.na(initial_placement_job_title) ~ 0,
+                                 .default = 1),
+    
+    # second placement
+    second_bin = case_when(is.na(second_placement_job_title) ~ 0,
+                                 .default = 1),
+    
+    # third placement
+    third_bin = case_when(is.na(third_placement_job_title) ~ 0,
+                                 .default = 1),
+    
+    # fourth placement
+    fourth_bin = case_when(is.na(fourth_placement_job_title) ~ 0,
+                                 .default = 1)
+    ) %>% 
+
+# keep only identifiers and binary vars
+  
+  select(year, last_name, first_name, initial_bin, second_bin, third_bin, fourth_bin)
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                find total number of placements per individual            ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+placement <- placement %>% 
+  
+  # sum columns for total positions
+  mutate(total_placements = rowSums(pick(ends_with("bin")), na.rm = TRUE))
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                  find placements per individual per year                 ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+placement <- placement %>% 
+  
+  mutate(
+    
+    # calculate number of years since grad (years in workforce)
+    workforce_years = 2026 - year,
+         
+    # divide placements by number of years in workforce
+    placements_per_year = case_when(
+      
+      # for MEDS class of 2026, default to total placement (otherwise, 1/0 = Inf)
+      workforce_years == 0 ~ total_placements,
+      
+      # division for other years
+      .default = total_placements/workforce_years))
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                                 create viz                               ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+placements_plot <- placement %>% 
+  
+  # remove individuals with no placements
+  filter(total_placements != 0) %>% 
+  
+  # plot distribution
+  ggplot(aes(total_placements)) +
+    geom_bar(fill = blue,) +
+  labs(x = "Number of Placements Since Graduation",
+       y = "Number of Graduates",
+       title = "Job Mobility in MEDS Graduates") +
+  theme_minimal()
+
+yearly_placements_plot <- placement %>% 
+  
+  # remove individuals with no placements
+  filter(total_placements != 0) %>% 
+  
+  # plot distribution
+  ggplot(aes(placements_per_year)) +
+    geom_bar(fill = blue) +
+  labs(x = "Number of Placements per Year",
+       y = "Number of Graduates",
+       title = "Job Mobility in MEDS Graduates",
+       subtitle = "(Yearly Average)") +
+  theme_minimal()
+
+placements_plot + yearly_placements_plot
+```
+The majority of graduates switch positions once a year or less. This is skewed heavily by graduates who have only had a year or two in the workforce.
+
+## Class of 2022: Have they retained their first placement?
+
+Here, we isolate the Class of 2022 -- they are the first MEDS cohort, and have had 5 years in the workforce. This provides a more standardized look at job mobility over time.
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##            create a placement data frame just for class of 2022          ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# this version of the df filters for 2022 and also keeps organization name variables
+
+first_cohort <- data %>% 
+  
+  # filter for class of 2022
+  filter(year == 2022) %>% 
+  
+  # select necessary columns
+  select(year, last_name, first_name, initial_placement_organization_name, current_most_recent_position_organization_name,
+         
+         # placement columns to know if there were any promotions
+         initial_placement_job_title, second_placement_job_title, 
+         third_placement_job_title, fourth_placement_job_title) %>% 
+  
+  # create binary columns based on NA values SOMETHING WRONG WITH IT THIS TIME?
+  mutate(
+     # initial placement
+    initial_bin = case_when(is.na(initial_placement_job_title) ~ 0,
+                                 .default = 1),
+    
+    # second placement
+    second_bin = case_when(is.na(second_placement_job_title) ~ 0,
+                                 .default = 1),
+    
+    # third placement
+    third_bin = case_when(is.na(third_placement_job_title) ~ 0,
+                                 .default = 1),
+    
+    # fourth placement
+    fourth_bin = case_when(is.na(fourth_placement_job_title) ~ 0,
+                                 .default = 1)
+    ) %>% 
+  
+  select(year, last_name, first_name,  initial_placement_organization_name, current_most_recent_position_organization_name,
+         initial_bin, second_bin, third_bin, fourth_bin) 
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                  find individuals at their original orgs                 ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+original_org <- first_cohort %>% 
+  
+  # keep only obvs where initial and current org are the same
+  filter(initial_placement_organization_name == current_most_recent_position_organization_name) %>% 
+  
+  # add column for the total number of promotions/position changes
+  mutate(total_placements = rowSums(pick(ends_with("bin")), na.rm = TRUE))
+```
+
+Insert conclusions
+
+## Length of Job Search
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                        add job search length columns                     ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+search <- data %>% 
+  
+  # select necessary columns
+  select(year, last_name, first_name, ends_with("date")) %>% 
+  
+  # transform date columns to date format
+  mutate(across(ends_with("date"), my)) %>% 
+  
+  # add column for graduation day approximation (06 + `year` + 15)
+  mutate(grad_date = paste0("06/", year, "/15"),
+         grad_date = myd(grad_date)) %>% 
+  
+  # calculate amount of time between graduation and initial placement
+  mutate(initial_search_days = as.numeric(initial_placement_start_date - grad_date),
+         
+         # fix so that if job was started in July (14 days or earlier), search length is actually 0
+         initial_search_days = if_else(initial_search_days < 15, 0, initial_search_days))
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##             filter for jobs found before/after grad, or at all           ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Select only for positions that were found after graduation (> 0 days), then find the number of observations
+after_grad <- search %>% 
+  filter(initial_search_days > 0)
+after_grad <- nrow(after_grad)
+
+# Select only for positions that were found before graduation (= 0 days), then find the number of observations
+before_grad <- search %>% 
+  filter(initial_search_days == 0)
+before_grad <- nrow(before_grad)
+
+# For a more accurate representation of job search length, we only select for those individuals that have found positions/the positions are publicly available
+search_non_na <- search %>% 
+  filter(!is.na(initial_search_days))
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                                 create viz                               ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+search_non_na %>% 
+  ggplot(aes(x = initial_search_days)) + 
+  geom_histogram(fill = blue) +
+  labs(x = "Initial Job Search Length (Days)",
+       y = "Number of Graduates",
+       title = "Distribution of Job Search Lengths in MEDS Graduates",
+       subtitle = "Average job search length of 62 days is shown in red") + 
+  theme_minimal() +
+  
+  # add line for average
+  geom_vline(xintercept = mean(search$initial_search_days, na.rm = TRUE),
+             color = "red",
+             linetype = "dashed")
+```
+type conclusions here
+
+including the following stats: 
+
+- number of roles found before or less than a month after graduation vs number of roles found after
+
+also, include assumption that positions started in July were found before graduation (job search = 0) due to lack of granularity in data.
+
+## Mobility between sectors
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                      read in and wrangle sector data                     ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+sector <- read_csv(here("data", "sectors.csv")) %>% 
+  
+  clean_names() %>% 
+  
+  # replace "N/A" string with NA value, in placement columns
+  mutate(across(everything(), ~na_if(.x, "N/A"))) %>% 
+
+  # replace "Unknown" string with NA value, in placement columns
+  mutate(across(everything(), ~na_if(.x, "Unknown"))) %>% 
+  
+  # remove rows where there was no initial placement/no data (mostly class of 2026)
+  filter(!is.na(initial_placement))
+
+# convert data to ggsankey format
+sector_sankey <- sector %>% 
+  
+  # function comes from ggsankey package
+  make_long(initial_sector, second_sector, third_sector, fourth_sector) 
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                        plot using ggsankey package                       ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+ggplot(sector_sankey, aes(x = x, # set aesthetics to make make_long() formatting
+                         next_x = next_x,
+                         node = node,
+                         next_node = next_node,
+                         fill = factor(node),
+                         label = node)) +
+         
+         # customize 
+         geom_sankey(flow.alpha = 0.5,  # opacity
+                     node.color = "NA", # border color
+                     show.legend = FALSE) + 
+         
+         # add node labels
+         geom_sankey_label(size = 3, color = "black", fill= "white") +
+  
+        # set x-axis labels
+         scale_x_discrete(labels = c("Initial\nPlacement", "Second\nPlacement", "Third\nPlacement", "Fourth\nPlacement")) +
+  
+        theme_bw()+
+        theme(legend.position = "none",
+              axis.title = element_blank(),
+              axis.text.y = element_blank(),
+              axis.ticks = element_blank(),
+              panel.grid = element_blank()) +
+  
+        scale_fill_viridis_d(option = "inferno") +
+  
+        labs(title = "Movement across sectors",
+             subtitle = "MEDS alumni, 2020-2026",
+             fill = "Nodes")
+```
+
