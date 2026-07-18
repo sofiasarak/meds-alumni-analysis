@@ -1,0 +1,46 @@
+---
+title: "analysis_draft"
+format: html
+---
+
+The following document analyzes the careers of MEDS alumni after graduation. The following explorations were conducted:
+
+- the number of roles an individual has held since graduating (total as well as per year)
+- how many of the Class of 2022 are still at their first placement after graduation
+- average length of job search
+- mobility between sectors
+- TO DO: time to first placement
+- TO DO: % of alumni with missing data
+- TO DO: common job titles: analyst, scientist, specialist, planner, engineer, manager
+- TO DO: differences in sector, time to first placement, by cohort
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                      data import and initial wrangling                   ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# load necessary libraries
+library(tidyverse)
+library(here)
+library(janitor)
+
+# read in data
+data <- read_csv(here("data", "meds_2020-26_placement_data.csv")) %>% 
+  clean_names()
+
+# encode "N/A" as actual NA values
+
+data <- data %>% 
+  
+  # replace "N/A" string with NA value, in placement columns
+  mutate(across(initial_placement_job_title:fourth_placement_end_date, ~na_if(.x, "N/A"))) %>% 
+
+  # replace "Unknown" string with NA value, in placement columns
+  mutate(across(initial_placement_job_title:fourth_placement_end_date, ~na_if(.x, "Unknown")))
+```
+
+## Placements Since Graduation
