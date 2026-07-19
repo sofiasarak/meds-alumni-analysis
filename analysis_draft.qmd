@@ -10,7 +10,6 @@ The following document analyzes the careers of MEDS alumni after graduation. The
 - how many of the Class of 2022 are still at their first placement
 - average length of job search
 - mobility between sectors
-- TO DO: time to first placement
 - TO DO: % of alumni with missing data
 - TO DO: common job titles: analyst, scientist, specialist, planner, engineer, manager
 - TO DO: differences in sector, time to first placement, by cohort
@@ -52,7 +51,7 @@ data <- data %>%
 
 ## Placements Since Graduation
 
-This analysis includes promotions within the same organization.
+This analysis consideers promotions within the same organization as a placement.
 
 ```{r}
 #| message: false
@@ -216,9 +215,59 @@ original_org <- first_cohort %>%
   
   # add column for the total number of promotions/position changes
   mutate(total_placements = rowSums(pick(ends_with("bin")), na.rm = TRUE))
+
+# add columnn to first_cohort data frame that denotes whether individual is still at their original org
+
+first_cohort <- first_cohort %>% 
+  
+  # create a binary column, =1 when original org is equal to current org
+  mutate(original_org = case_when(
+    initial_placement_organization_name == current_most_recent_position_organization_name ~ 1,
+    .default = 0))
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                                 create viz                               ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# bar plot comparing original org to not original org
+original_org_plot <- ggplot(first_cohort, aes(x = as.factor(original_org))) +
+  geom_bar(fill = blue) +
+  
+  # add labels for each bar
+  geom_text(stat = "count", aes(label = after_stat(count), y = after_stat(count)),
+            vjust = 2, size = 5, color = "white") +
+  labs(y = "Number of Graduates",
+       x = " ",
+       title = "How many of MEDS Class of 2022 are still at their initial placements?",
+       subtitle = "Of the 7 still at their initial placement, 4 still hold the same job title.") +
+  scale_x_discrete(labels = c("1" = "Initial placement", "0" = "Not at initial placement")) +
+  theme_minimal()
+
+# number of placements in the class of 2022
+first_cohort_placements_plot <- placement %>% 
+  
+  # remove individuals with no placements
+  filter(total_placements != 0) %>% 
+  
+  # filter for class of 2022
+  filter(year == 2022) %>% 
+  
+  # plot distribution
+  ggplot(aes(total_placements)) +
+    geom_bar(fill = blue,) +
+   # add labels for each bar
+  geom_text(stat = "count", aes(label = after_stat(count), y = after_stat(count)),
+            vjust = 2, size = 5, color = "white") +
+  labs(x = "Number of Placements Since Graduation",
+       y = "Number of Graduates",
+       title = "Job Mobility in 2022 MEDS Graduates") +
+  theme_minimal()
+
+original_org_plot / first_cohort_placements_plot
+
 ```
 
-Insert conclusions
+The majority of the class of 2022 is not still at their initial organization, and have had 2 placements since graduating.
 
 ## Length of Job Search
 
@@ -252,15 +301,13 @@ search <- data %>%
 ##             filter for jobs found before/after grad, or at all           ----
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-# Select only for positions that were found after graduation (> 0 days), then find the number of observations
-after_grad <- search %>% 
-  filter(initial_search_days > 0)
-after_grad <- nrow(after_grad)
-
-# Select only for positions that were found before graduation (= 0 days), then find the number of observations
-before_grad <- search %>% 
-  filter(initial_search_days == 0)
-before_grad <- nrow(before_grad)
+# Create binary column where positions found after graduation are denoted with 1
+search <- search %>%
+  
+  # add column
+  mutate(after_grad = case_when(
+    initial_search_days > 0 ~ 1,
+    .default = 0))
 
 # For a more accurate representation of job search length, we only select for those individuals that have found positions/the positions are publicly available
 search_non_na <- search %>% 
@@ -270,29 +317,45 @@ search_non_na <- search %>%
 ##                                 create viz                               ----
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-search_non_na %>% 
+# job search distributions
+job_search_dist_plot <- search_non_na %>% 
   ggplot(aes(x = initial_search_days)) + 
   geom_histogram(fill = blue) +
   labs(x = "Initial Job Search Length (Days)",
        y = "Number of Graduates",
        title = "Distribution of Job Search Lengths in MEDS Graduates",
-       subtitle = "Average job search length of 62 days is shown in red") + 
+       subtitle = "Average job search length of 62 days is shown in red; before graduation finds excluded from plot") + 
   theme_minimal() +
   
   # add line for average
   geom_vline(xintercept = mean(search$initial_search_days, na.rm = TRUE),
              color = "red",
              linetype = "dashed")
+
+# number of roles found before and after graduation
+after_grad_plot <- ggplot(search_non_na, aes(x = as.factor(after_grad))) +
+  geom_bar(fill = blue) +
+  
+  # add labels for each bar
+  geom_text(stat = "count", aes(label = after_stat(count), y = after_stat(count)),
+            vjust = 2, size = 5, color = "white") +
+  labs(y = "Number of Graduates",
+       x = " ",
+       title = "When do MEDS students find their initial placements?") +
+  scale_x_discrete(labels = c("1" = "After graduation", "0" = "Before graduation")) +
+  theme_minimal()
+
+job_search_dist_plot / after_grad_plot
 ```
-type conclusions here
+These analyses rest on the assumption that any roles started in or before July were found before graduation. This can obviously introduce some error - an entire month *can* be enough time to find and begin a role, but we do not have the granularity in our data to determine when exactly in July the roles were started. 
 
-including the following stats: 
+Overall, the job search lasted around two months for most graduates, and the majority of graduates began their roles after July (or over a month after graduation).
 
-- number of roles found before or less than a month after graduation vs number of roles found after
-
-also, include assumption that positions started in July were found before graduation (job search = 0) due to lack of granularity in data.
+These conclusions do not take into consideration the fact that there were individuals who had graduated but were not actively searching for roles.
 
 ## Mobility between sectors
+
+Here, I explore whether graduates switch between sectors as they change roles.
 
 ```{r}
 #| message: false
@@ -350,10 +413,12 @@ ggplot(sector_sankey, aes(x = x, # set aesthetics to make make_long() formatting
               axis.ticks = element_blank(),
               panel.grid = element_blank()) +
   
-        scale_fill_viridis_d(option = "inferno") +
+        scale_fill_viridis_d(option = "rocket") +
   
-        labs(title = "Movement across sectors",
-             subtitle = "MEDS alumni, 2020-2026",
+        labs(title = "Movement across sectors, MEDS graduates",
              fill = "Nodes")
 ```
 
+This diagram shows that many alumni start out in Research/Education and move to other sectors. Many who start in the corporate sector remain there.
+
+## Missing data
