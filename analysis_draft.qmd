@@ -8,19 +8,20 @@ The following document analyzes the careers of MEDS alumni after graduation. The
 
 - the number of roles an individual has held since graduating (total as well as per year)
 - how many of the Class of 2022 are still at their first placement
-- average length of job search
+- average length of job search (as well as by cohort)
 - mobility between sectors
-- TO DO: % of alumni with missing data
-- TO DO: common job titles: analyst, scientist, specialist, planner, engineer, manager
-- TO DO: differences in sector, time to first placement, by cohort
+- differences in current placement sector, by cohort
+- % of alumni with missing data
+- common job titles: analyst, scientist, specialist, planner, engineer, manager
 
 ```{r}
 #| message: false
 #| warning: false
 #| echo: false
 
-# save Bren blue
+# save Bren colors
 blue <- "#14375C"
+green <- "#61A845"
 
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##                      data import and initial wrangling                   ----
@@ -51,7 +52,7 @@ data <- data %>%
 
 ## Placements Since Graduation
 
-This analysis consideers promotions within the same organization as a placement.
+This analysis considers promotions within the same organization as a placement.
 
 ```{r}
 #| message: false
@@ -353,6 +354,32 @@ Overall, the job search lasted around two months for most graduates, and the maj
 
 These conclusions do not take into consideration the fact that there were individuals who had graduated but were not actively searching for roles.
 
+## Job search by cohort
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                 find average job search by cohort and plot               ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+search_non_na %>% 
+  group_by(year) %>% 
+  summarise(average_search = round(mean(initial_search_days, na.rm = TRUE))) %>% 
+  
+  ggplot(aes(x = year, y = average_search)) +
+  geom_col(fill = blue) +
+  geom_text(aes(label = average_search),
+            color = "white",
+            vjust = 1.4,
+            size = 4) +
+  labs(title = "Length of job search by MEDS cohort",
+       x = "",
+       y = "Days") +
+  theme_minimal()
+```
+These resulls are heavily skewed by 2025 and 2026 graduates who have not find roles yet.
+
 ## Mobility between sectors
 
 Here, I explore whether graduates switch between sectors as they change roles.
@@ -422,3 +449,169 @@ ggplot(sector_sankey, aes(x = x, # set aesthetics to make make_long() formatting
 This diagram shows that many alumni start out in Research/Education and move to other sectors. Many who start in the corporate sector remain there.
 
 ## Missing data
+
+Other than for initial placements, the MEDS career team does not have a way to gather data on alumni careers other than LinkedIn or other social pages, such as personal websites or GitHub bios. Unfortunately, is not uncommon for an individual's online presence to be outdated, resulting in missing data for analyses such as this one. Because of this, I briefly explore how many alumni have outdated or missing information regarding their career.
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                create binary variable for unknown placements             ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# `current_position_unknown` column is NA if position IS known, and "Unknown" otherwise
+data <- data %>% 
+  
+  # change contents of column
+  mutate(current_position_unknown = case_when(
+    current_position_unknown == "Unknown" ~ 1,
+    .default = 0
+  ))
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                            plot unknown vs known                         ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+unknown_plot <- data %>% 
+  ggplot(aes(y = "", fill = as.factor(current_position_unknown))) + 
+  geom_bar(position = "fill") + 
+  geom_text(
+    stat = "count",
+    
+    # calculate proportions dynamically and format them as percentages
+    aes(
+      label = scales::percent(after_stat(count / sum(count)), accuracy = 1),
+      group = current_position_unknown
+    ),
+    position = position_fill(vjust = 0.5),
+    size = 5,
+    color = "white"
+  ) +
+  labs(
+    y = "", 
+    x = NULL, 
+    title = "What percent of alumni careers do we\nactually know about?",
+    fill = " "
+  ) + 
+  scale_fill_discrete(labels = c("1" = "Unknown", "0" = "Known"),
+                      palette = c(blue, green)) +
+  theme_minimal() +
+  theme(axis.text = element_blank(),
+        legend.position = "bottom", 
+        legend.direction = "horizontal")
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                       Proportion known by class year                     ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+unknown_by_class_plot <- data %>% 
+  
+  # calculate % unknown for each year
+  group_by(year) %>% 
+  summarize(perc_unknown = mean(current_position_unknown, na.rm = TRUE)) %>% 
+  
+  # plot
+  ggplot(aes(x = year, y = perc_unknown)) +
+  geom_col(fill = blue) +
+   geom_text(
+    aes(label = paste0(round(perc_unknown * 100), "%")),
+    vjust = 1.5,
+    size = 5,
+    color = "white"
+  ) +
+  theme_minimal() +
+  labs(title = "Perentage Missing Data, by Cohort",
+       x = "",
+       y = "% Unknown")
+  
+
+unknown_plot + unknown_by_class_plot
+```
+
+
+With this insight, it becomes clear that the previous conclusions made are based only on a proportion of total MEDS outcomes. However, it is important to note that the majority of unknown careers come from the two most recent classes (2025 and 2026). This may be due to the fact that many may have not secured full-time roles yet.
+
+## Position Titles
+
+Common job titles across alumni include the words: analyst, scientist, specialist, planner, engineer, and manager, highlighting the range of roles that the MEDS program prepares graduates for.
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                    create df just with position titles                   ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+placement_titles <- data %>% 
+  select(contains("job_title")) %>% 
+  
+  # create a long data frame
+  pivot_longer(cols = everything(), names_to = "placement_order", values_to = "title") %>% 
+  drop_na()
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                    create binary columns noting titles                   ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+placement_titles <- placement_titles %>% 
+  
+ # Analyst
+   mutate(analyst = case_when(
+    str_detect(title, "Analyst") ~ 1,
+    .default = 0)) %>% 
+  
+  # Scientist
+   mutate(scientist = case_when(
+    str_detect(title, "Scientist") ~ 1,
+    .default = 0)) %>% 
+  
+  # Specialist
+   mutate(specialist = case_when(
+    str_detect(title, "Specialist") ~ 1,
+    .default = 0)) %>% 
+  
+  # Planner
+   mutate(planner = case_when(
+    str_detect(title, "Planner") ~ 1,
+    .default = 0)) %>% 
+  
+  # Engineer
+   mutate(engineer = case_when(
+    str_detect(title, "Engineer") ~ 1,
+    .default = 0)) %>% 
+  
+  # Manager
+   mutate(manager = case_when(
+    str_detect(title, "Manager") ~ 1,
+    .default = 0))
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                calculate number of roles with those titles               ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+titles_count <- placement_titles %>% 
+  
+  # sum all columns
+    summarise(across(c(analyst:manager), sum)) %>% 
+    pivot_longer(analyst:manager, names_to = "title", values_to = "count")
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                                 create viz                               ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+titles_count %>% 
+  ggplot(aes(x = reorder(title, -count), y = count)) +
+  geom_col(fill = blue) +
+  geom_text(aes(label = count),
+            color = "white",
+            vjust = 1.4,
+            size = 4) +
+  labs(title = "Most common job titles in MEDS alumni",
+       x = "",
+       y = "Number of roles") +
+  theme_minimal()
+```
+Scientists and analysts takes the lead as the most common job titles.
