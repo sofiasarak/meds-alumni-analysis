@@ -4,7 +4,7 @@ author: "Sofia Sarak"
 format: html
 ---
 
-The following document analyzes the careers of MEDS alumni after graduation. The following explorations were conducted:
+This document analyzes the careers of MEDS alumni after graduation. The following explorations were conducted:
 
 - the number of roles an individual has held since graduating (total as well as per year)
 - how many of the Class of 2022 are still at their first placement
@@ -447,6 +447,69 @@ ggplot(sector_sankey, aes(x = x, # set aesthetics to make make_long() formatting
 ```
 
 This diagram shows that many alumni start out in Research/Education and move to other sectors. Many who start in the corporate sector remain there.
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##          attach sector to complete df for sector by year analysis        ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# separate sector df for joining 
+initial <- sector %>% 
+  select(initial_placement, initial_sector)
+second <- sector %>% 
+  select(second_placement, second_sector)
+third <- sector %>% 
+  select(third_placement, third_sector)
+fourth <- sector %>% 
+  select(fourth_placement, fourth_sector)
+
+# join separate dfs to data (takes a sec)
+data <- data %>% 
+  left_join(initial, by=c("initial_placement_organization_name" = "initial_placement")) %>% 
+  distinct()
+data <- data %>% 
+  left_join(second, by=c("second_placement_organization_name" = "second_placement")) %>% 
+  distinct()
+data <- data %>% 
+  left_join(third, by=c("third_placement_organization_name" = "third_placement")) %>% 
+  distinct()
+data <- data %>% 
+  left_join(fourth, by=c("fourth_placement_organization_name" = "fourth_placement")) %>% 
+  distinct()
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                            group by class year                           ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+sector_by_cohort <- data %>% 
+  pivot_longer(cols = c(initial_sector:fourth_sector),
+               values_to = "sector",
+               names_to = "placement_order") %>% 
+  group_by(year, sector) %>% 
+  summarize(count = n()) %>% 
+  filter(!is.na(sector))
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                                    plot                                  ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# faceted by year
+# ggplot(sector_by_cohort, aes(y = sector, x = count)) +
+#   geom_col() +
+#   facet_wrap(~year)
+
+ggplot(sector_by_cohort, aes(y = as.factor(year), x = count, fill = sector)) +
+  geom_col() +
+  labs(x = "Number of positions",
+       y = "",
+       fill = "Sector", 
+       title = "Differences in sector by cohort") +
+  theme_minimal()
+
+# could also benefit with plotting by percentage?
+```
+
 
 ## Missing data
 
