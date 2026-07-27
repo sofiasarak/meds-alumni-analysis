@@ -23,6 +23,17 @@ This document analyzes the careers of MEDS alumni after graduation. The followin
 blue <- "#14375C"
 green <- "#61A845"
 
+# build sector color palette
+sectors <- c(
+  "Consulting" = "#264653",
+  "Corporate" = "#287271",
+  "Federal Government" = "#2a9d8f",
+  "Local Government" = "#8ab17d",
+  "Non-Profit/NGO" = "#e9c46a",
+  "Research/Education" = "#f4a261",
+  "State Government" = "#e76f51"
+)
+
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##                      data import and initial wrangling                   ----
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -75,8 +86,8 @@ search <- data %>%
   # calculate amount of time between graduation and initial placement
   mutate(initial_search_days = as.numeric(initial_placement_start_date - grad_date),
          
-         # fix so that if job was started in July (14 days or earlier), search length is actually 0
-         initial_search_days = if_else(initial_search_days < 15, 0, initial_search_days))
+         # fix so that if job was started in June (-14 days or earlier), search length is actually 0
+         initial_search_days = if_else(initial_search_days < 0, 0, initial_search_days))
 
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##             filter for jobs found before/after grad, or at all           ----
@@ -98,6 +109,9 @@ search_non_na <- search %>%
 ##                                 create viz                               ----
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+# save average job search
+avg_length <- mean(search_non_na$initial_search_days, na.rm = TRUE)
+
 # job search distributions
 search_non_na %>% 
   
@@ -108,9 +122,9 @@ search_non_na %>%
                color = blue,
                alpha = 0.75) +
   labs(x = "Initial Job Search Length (Days)",
-       y = "Number of Graduates",
+       y = "Probability Density",
        title = "Distribution of Job Search Lengths in MEDS Graduates",
-       subtitle = "The average job search length is <span style='color: Red;'>**62 days**</span>.*",
+       subtitle = "The average job search length is <span style='color: Red;'>**61 days**</span>.*",
        caption = "*Roles found before graduation are excluded from plot.") + 
   theme_minimal() +
   
@@ -151,12 +165,6 @@ sector <- read_csv(here("data", "sectors.csv")) %>%
   
   # remove rows where there was no initial placement/no data (mostly class of 2026)
   filter(!is.na(initial_placement))
-
-# convert data to ggsankey format
-sector_sankey <- sector %>% 
-  
-  # function comes from ggsankey package
-  make_long(initial_sector, second_sector, third_sector, fourth_sector) 
 
 ```
 
@@ -213,15 +221,34 @@ sector_by_cohort <- data %>%
 #   geom_col() +
 #   facet_wrap(~year)
 
-ggplot(sector_by_cohort, aes(y = as.factor(year), x = count, fill = sector)) +
-  geom_col() +
-  labs(x = "Number of positions",
+ggplot(sector_by_cohort, aes(x = count, y = as.factor(year), fill = sector)) +
+  geom_col(position = "fill") +
+  labs(x = "Proportion of cohort",
        y = "",
        fill = "Sector", 
        title = "Differences in sector by cohort") +
-  theme_minimal()
+  theme_minimal() +
+  theme() +
+  scale_fill_manual(values = sectors)
 
 # could also benefit with plotting by percentage?
+```
+```{r}
+# current sectors
+
+# add current sector as a column
+sector <- sector %>% 
+  mutate(current_sector = fourth_sector,
+         current_sector = ifelse(is.na(current_sector), third_sector, current_sector),
+         current_sector = ifelse(is.na(current_sector), second_sector, current_sector),
+         current_sector = ifelse(is.na(current_sector), initial_sector, current_sector))
+
+sector %>% 
+  group_by(current_sector) %>% 
+  summarize(count = n()) %>% 
+  
+  ggplot(aes(x= 1, fill = current_sector)) +
+  geom_bar()
 ```
 
 
