@@ -202,6 +202,24 @@ data <- data %>%
   left_join(fourth, by=c("fourth_placement_organization_name" = "fourth_placement")) %>% 
   distinct()
 
+# fix missing sector
+data <- data %>% 
+  
+  # Lewis White
+  mutate(initial_sector = case_when(
+    initial_placement_organization_name == "emLab/Columbia University Mailman School of Public Health" ~ "Research/Education",
+    .default = initial_sector)) %>% 
+  
+  # Sam Muir
+  mutate(third_sector = case_when(
+    third_placement_organization_name == "Blue Forest" ~"Non-Profit/NGO",
+    .default = third_sector)) %>% 
+  
+  # Nicole Pepper
+  mutate(second_sector = case_when(
+    second_placement_organization_name == "SkyTruth" ~"Non-Profit/NGO",
+    .default = second_sector))
+
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##                            group by class year                           ----
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -212,7 +230,10 @@ sector_by_cohort <- data %>%
   group_by(year, sector) %>% 
   summarize(count = n()) %>% 
   filter(!is.na(sector))
+```
 
+
+```{r}
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##                                    plot                                  ----
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -221,18 +242,56 @@ sector_by_cohort <- data %>%
 #   geom_col() +
 #   facet_wrap(~year)
 
+# save the number of students in each cohort
+first <- data %>% 
+  filter(year == 2022) %>% 
+  summarise(n()) %>% 
+  pull(1)
+
+second <- data %>% 
+  filter(year == 2023) %>% 
+  summarise(n()) %>% 
+  pull(1)
+
+third <- data %>% 
+  filter(year == 2024) %>% 
+  summarise(n()) %>% 
+  pull(1)
+
+fourth <- data %>% 
+  filter(year == 2025) %>% 
+  summarise(n()) %>% 
+  pull(1)
+
+fifth <- data %>% 
+  filter(year == 2026) %>% 
+  summarise(n()) %>% 
+  pull(1)
+
+
+# plot
+
 ggplot(sector_by_cohort, aes(x = count, y = as.factor(year), fill = sector)) +
   geom_col(position = "fill") +
-  labs(x = "Proportion of cohort",
-       y = "",
+  labs(x = "Proportion",
+       y = "Cohort",
        fill = "Sector", 
        title = "Differences in sector by cohort") +
   theme_minimal() +
-  theme() +
-  scale_fill_manual(values = sectors)
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major.y = element_blank()) +
+  scale_fill_manual(values = sectors) +
+  scale_y_discrete(labels = c(
+    "2022" = paste("2022\nn =", first),
+    "2023" = paste("2023\nn =", second),
+    "2024" = paste("2024\nn =", third),
+    "2025" = paste("2025\nn =", fourth),
+    "2026" = paste("2026\nn =", fifth)
+  ))
 
 # could also benefit with plotting by percentage?
 ```
+
 ```{r}
 # current sectors
 
@@ -247,8 +306,74 @@ sector %>%
   group_by(current_sector) %>% 
   summarize(count = n()) %>% 
   
-  ggplot(aes(x= 1, fill = current_sector)) +
-  geom_bar()
+  ggplot(aes(y= reorder(current_sector, -count), x = count, fill = current_sector)) +
+  geom_col() +
+  geom_text(aes(label = count),
+            color = "white",
+            hjust = 1.5) +
+  labs(title = "Current (2026) Sector Distribution of MEDS Alumni",
+       x = "Number of positions",
+       y = " ",
+       fill = "Current sector") +
+  theme_minimal() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major.y = element_blank(),
+        axis.text.x = element_blank()) +
+  scale_fill_manual(values = sectors)
+```
+```{r}
+sector %>% 
+  group_by(current_sector) %>% 
+  summarize(count = n()) %>% 
+  
+  ggplot(aes(y= count, x = " ", fill = current_sector)) +
+  geom_bar(stat = "identity", position = "fill") +
+  geom_text(aes(label = paste0(current_sector, " (n = ", count, ")"), group = current_sector),
+          position = position_fill(vjust = 0.5),
+          color = "white")+
+  theme_minimal() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        legend.position = "none") +
+  scale_fill_manual(values = sectors) +
+  labs(title = "Current (2026) Sectors of MEDS Alumni",
+       x = " ",
+       y = " ",
+       fill = "Current sector")
+
+ggsave("sector_plot.png", width = 4, height = 6, units = "in")
+```
+
+## Number of sectors each calendar year (not cohort)
+```{r}
+# data wrangling (put data into long format)
+data_long <- data %>% 
+  pivot_longer(
+    cols = matches("^(initial|second|third|fourth)_(placement_)?(job_title|organization_name|start_date|end_date|sector)$"),
+    names_to = c("placement_num", NA, ".value"),
+    names_pattern = "^(initial|second|third|fourth)_(placement_)?(job_title|organization_name|start_date|end_date|sector)$"
+  ) %>% 
+  filter(!if_all(c(job_title, organization_name, start_date, end_date, sector), is.na)) %>% 
+  
+  # create year column based on start and end dates
+  mutate(
+    start_year = str_sub(start_date, -4, -1),
+    end_year = str_sub(end_date, -4, -1)) %>% 
+  
+  filter(!(is.na(start_year) & is.na(end_year))) %>% 
+  
+  mutate(end_year = ifelse(is.na(end_date), "2026", end_year)) %>% 
+  
+  mutate(calendar_year = map2(start_year, end_year, seq)) %>%
+  unnest(calendar_year) 
+
+
+# group by calendar year for analysis
+data_long_grouped_sector <- data_long %>% 
+  group_by(calendar_year, sector) %>% 
+  summarise(count = n()) %>% 
+  filter(calendar_year > 2021)
+
 ```
 
 
@@ -264,11 +389,11 @@ Common job titles across alumni include the words: analyst, scientist, specialis
 ##                    create df just with position titles                   ----
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-placement_titles <- data %>% 
-  select(contains("job_title")) %>% 
+placement_titles <- data_long %>% 
+  select(contains("job_title"), calendar_year) %>% 
   
   # create a long data frame
-  pivot_longer(cols = everything(), names_to = "placement_order", values_to = "title") %>% 
+  pivot_longer(cols = contains("job_title"), names_to = "placement_order", values_to = "title") %>% 
   drop_na()
 
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -331,6 +456,65 @@ titles_count %>%
   labs(title = "Most common job titles in MEDS alumni",
        x = "",
        y = "Number of roles") +
-  theme_minimal()
+  theme_minimal() +
+  theme(axis.text.y = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank())
 ```
-Scientists and analysts takes the lead as the most common job titles.
+```{r}
+# titles by year
+placement_titles_grouped <- placement_titles %>% 
+  group_by(calendar_year) %>% 
+  summarise(across(c(analyst:manager), sum)) %>% 
+  filter(calendar_year > 2021) %>% 
+  pivot_longer(analyst:manager, names_to = "title", values_to = "count")
+
+# plot
+ggplot(placement_titles_grouped, aes(x = count, y = as.factor(calendar_year), fill = title)) +
+  geom_col(position = "fill") +
+  labs(x = "Proportion",
+       y = "Year",
+       fill = "Job title", 
+       title = "Differences in job titles by calendar year") +
+  theme_minimal() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major.y = element_blank())
+```
+```{r}
+# current job titles
+placement_titles_grouped %>% 
+  filter(calendar_year == "2026") %>% 
+ ggplot(aes(y= reorder(title, -count), x = count)) +
+  geom_col(fill = blue) +
+  geom_text(aes(label = count),
+            color = "white",
+            hjust = 1.5) +
+  labs(title = "Current Sector Distribution of MEDS Alumni (2026)",
+       x = "Number of positions",
+       y = " ",
+       fill = "Current sector") +
+  theme_minimal() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major.y = element_blank()) 
+```
+
+```{r}
+placement_titles_grouped %>% 
+  filter(calendar_year == "2026") %>% 
+ggplot(aes(y= count, x = " ", fill = title)) +
+  geom_bar(stat = "identity", position = "fill") +
+  geom_text(aes(label = paste0(title, " (n = ", count, ")"), group = title),
+          position = position_fill(vjust = 0.5),
+          color = "white")+
+  theme_minimal() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        legend.position = "none") +
+  labs(title = "Current (2026) Job Titles of MEDS Alumni",
+       x = " ",
+       y = " ",
+       fill = "Current sector")
+
+ggsave("title_plot.png", width = 4, height = 6, units = "in")
+```
+
