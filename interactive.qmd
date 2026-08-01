@@ -1,0 +1,143 @@
+---
+title: "interactive"
+format: html
+---
+
+```{r}
+library(tidyverse)
+library(shiny)
+library(plotly)
+library(DT)
+```
+
+
+```{r}
+data <- data %>% 
+  
+  # replace "N/A" string with NA value, in placement columns
+  mutate(across(initial_placement_job_title:fourth_placement_end_date, ~na_if(.x, "N/A"))) %>% 
+  
+  # replace "Unknown" string with NA value, in placement columns
+  mutate(across(initial_placement_job_title:fourth_placement_end_date, ~na_if(.x, "Unknown")))
+
+sector <- read_csv(here("data", "sectors.csv")) %>% 
+  
+  clean_names() %>% 
+  
+  # replace "N/A" string with NA value, in placement columns
+  mutate(across(everything(), ~na_if(.x, "N/A"))) %>% 
+  
+  # replace "Unknown" string with NA value, in placement columns
+  mutate(across(everything(), ~na_if(.x, "Unknown"))) %>% 
+  
+  # remove rows where there was no initial placement/no data (mostly class of 2026)
+  filter(!is.na(initial_placement))
+```
+
+```{r}
+# separate sector df for joining 
+initial <- sector %>% 
+  select(initial_placement, initial_sector)
+second <- sector %>% 
+  select(second_placement, second_sector)
+third <- sector %>% 
+  select(third_placement, third_sector)
+fourth <- sector %>% 
+  select(fourth_placement, fourth_sector)
+
+# join separate dfs to data (takes a sec)
+data <- data %>% 
+  left_join(initial, by=c("initial_placement_organization_name" = "initial_placement")) %>% 
+  distinct()
+data <- data %>% 
+  left_join(second, by=c("second_placement_organization_name" = "second_placement")) %>% 
+  distinct()
+data <- data %>% 
+  left_join(third, by=c("third_placement_organization_name" = "third_placement")) %>% 
+  distinct()
+data <- data %>% 
+  left_join(fourth, by=c("fourth_placement_organization_name" = "fourth_placement")) %>% 
+  distinct()
+
+# fix missing sector
+data <- data %>% 
+  
+  # Lewis White
+  mutate(initial_sector = case_when(
+    initial_placement_organization_name == "emLab/Columbia University Mailman School of Public Health" ~ "Research/Education",
+    .default = initial_sector)) %>% 
+  
+  # Sam Muir
+  mutate(third_sector = case_when(
+    third_placement_organization_name == "Blue Forest" ~"Non-Profit/NGO",
+    .default = third_sector)) %>% 
+  
+  # Nicole Pepper
+  mutate(second_sector = case_when(
+    second_placement_organization_name == "SkyTruth" ~"Non-Profit/NGO",
+    .default = second_sector))
+
+sector <- sector %>% 
+  mutate(current_sector = fourth_sector,
+         current_sector = ifelse(is.na(current_sector), third_sector, current_sector),
+         current_sector = ifelse(is.na(current_sector), second_sector, current_sector),
+         current_sector = ifelse(is.na(current_sector), initial_sector, current_sector))
+```
+```{r}
+# add current sector as a column
+sector <- sector %>% 
+  mutate(current_sector = fourth_sector,
+         current_sector = ifelse(is.na(current_sector), third_sector, current_sector),
+         current_sector = ifelse(is.na(current_sector), second_sector, current_sector),
+         current_sector = ifelse(is.na(current_sector), initial_sector, current_sector))
+
+sector %>% 
+  group_by(current_sector) %>% 
+  summarize(count = n()) %>% 
+  
+  ggplot(aes(y= reorder(current_sector, -count), x = count, fill = current_sector)) +
+  geom_col() +
+  geom_text(aes(label = count),
+            color = "white",
+            hjust = 1.5) +
+  labs(title = "Current (2026) Sector Distribution of MEDS Alumni",
+       x = "Number of positions",
+       y = " ",
+       fill = "Current sector") +
+  theme_minimal() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major.y = element_blank(),
+        axis.text.x = element_blank()) +
+  scale_fill_manual(values = sectors)
+```
+```{r}
+ui <- fluidPage(
+  plotlyOutput("bar"),
+  DTOutput("table")
+)
+
+sector_counts <-sector %>% 
+  group_by(current_sector) %>% 
+  summarize(count = n())
+
+server <- function(input, output) {
+  output$bar <- renderPlotly({
+    plot_ly(sector_counts, x = ~current_sector, y = ~count, type = "bar",
+            source = "bar_click")
+  })
+  
+  clicked_sector <- reactive({
+    d <- event_data("plotly_click", source = "bar_click")
+    req(d)
+    d$x
+  })
+  
+  output$table <- renderDT({
+    req(clicked_sector())
+    sector[sector$current_sector == clicked_sector(), ]
+  })
+}
+
+shinyApp(ui, server)
+```
+
