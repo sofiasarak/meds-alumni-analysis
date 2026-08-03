@@ -1,11 +1,15 @@
 ---
 title: "interactive"
 format: html
+
 ---
+
+## Setup
 
 ```{r}
 #| message: false
 #| warning: false
+# load necessary libraries
 library(tidyverse)
 library(shiny)
 library(plotly)
@@ -13,6 +17,7 @@ library(DT)
 library(janitor)
 library(here)
 
+# save palette colors
 sectors <- c(
   "Consulting" = "#264653",
   "Corporate" = "#287271",
@@ -24,10 +29,12 @@ sectors <- c(
 )
 ```
 
+## Data Import and Wrangling
 
 ```{r}
 #| message: false
 #| warning: false
+# read in placement data
 data <- read_csv(here("data", "meds_2020-26_placement_data.csv")) %>% 
 
   clean_names() %>% 
@@ -38,6 +45,7 @@ data <- read_csv(here("data", "meds_2020-26_placement_data.csv")) %>%
   # replace "Unknown" string with NA value, in placement columns
   mutate(across(initial_placement_job_title:fourth_placement_end_date, ~na_if(.x, "Unknown")))
 
+# read in employer/sector lookup tables
 sector <- read_csv(here("data", "sectors.csv")) %>% 
   
   clean_names() %>% 
@@ -50,60 +58,81 @@ sector <- read_csv(here("data", "sectors.csv")) %>%
   
   # remove rows where there was no initial placement/no data (mostly class of 2026)
   filter(!is.na(initial_placement))
-```
 
-```{r}
 # separate sector df for joining 
 initial <- sector %>% 
-  select(initial_placement, initial_sector)
-second <- sector %>% 
-  select(second_placement, second_sector)
-third <- sector %>% 
-  select(third_placement, third_sector)
-fourth <- sector %>% 
-  select(fourth_placement, fourth_sector)
+  select(initial_placement, initial_sector) %>% 
+  
+  # de-duplicate lookup table
+  distinct(initial_placement, .keep_all = TRUE)
 
-# join separate dfs to data (takes a sec)
+second <- sector %>% 
+  select(second_placement, second_sector) %>% 
+  distinct(second_placement, .keep_all = TRUE)
+
+third <- sector %>% 
+  select(third_placement, third_sector) %>% 
+  distinct(third_placement, .keep_all = TRUE)
+
+fourth <- sector %>% 
+  select(fourth_placement, fourth_sector) %>% 
+   distinct(fourth_placement, .keep_all = TRUE)
+
+```
+
+### Join lookup tables to data
+
+```{r}
+# join separate sector dfs to data 
 data <- data %>% 
   left_join(initial, by=c("initial_placement_organization_name" = "initial_placement")) %>% 
-  distinct()
+  distinct() %>% 
+  rename("initial_placement" = "initial_placement_organization_name")
+
 data <- data %>% 
   left_join(second, by=c("second_placement_organization_name" = "second_placement")) %>% 
-  distinct()
+  distinct() %>% 
+  rename("second_placement" = "second_placement_organization_name")
+
 data <- data %>% 
   left_join(third, by=c("third_placement_organization_name" = "third_placement")) %>% 
-  distinct()
+  distinct() %>% 
+  rename("third_placement" = "third_placement_organization_name")
+
 data <- data %>% 
   left_join(fourth, by=c("fourth_placement_organization_name" = "fourth_placement")) %>% 
-  distinct()
+  distinct() %>% 
+  rename("fourth_placement" = "fourth_placement_organization_name")
 
-# fix missing sector
+# fix missing sector and other inconsistencies
 data <- data %>% 
   
   # Lewis White
   mutate(initial_sector = case_when(
-    initial_placement_organization_name == "emLab/Columbia University Mailman School of Public Health" ~ "Research/Education",
+    initial_placement == "emLab/Columbia University Mailman School of Public Health" ~ "Research/Education",
     .default = initial_sector)) %>% 
   
   # Sam Muir
   mutate(third_sector = case_when(
-    third_placement_organization_name == "Blue Forest" ~"Non-Profit/NGO",
+    third_placement == "Blue Forest" ~"Non-Profit/NGO",
     .default = third_sector)) %>% 
   
   # Nicole Pepper
   mutate(second_sector = case_when(
-    second_placement_organization_name == "SkyTruth" ~"Non-Profit/NGO",
-    .default = second_sector))
+    second_placement == "SkyTruth" ~"Non-Profit/NGO",
+    .default = second_sector)) %>% 
+  
+   # remove inaccurate job
+  filter(!initial_placement == "Data Science 1 (UCSB?)") %>% 
+  
+  # group arctic data center with NCEAS
+  mutate(second_placement = case_when(
+    second_placement == "Arctic Data Center, National Center for Ecological Analysis and Synthesis (NCEAS), UCSB" ~ "National Center for Ecological Analysis and Synthesis (NCEAS), UCSB",
+    .default = second_placement))
 
-sector <- sector %>% 
-  mutate(current_sector = fourth_sector,
-         current_sector = ifelse(is.na(current_sector), third_sector, current_sector),
-         current_sector = ifelse(is.na(current_sector), second_sector, current_sector),
-         current_sector = ifelse(is.na(current_sector), initial_sector, current_sector))
-```
-```{r}
+
 # add current org as column
-sector <- sector %>% 
+sector <- data  %>% 
   mutate(current_placement = fourth_placement,
          current_placement = ifelse(is.na(current_placement), third_placement, current_placement),
          current_placement = ifelse(is.na(current_placement), second_placement, current_placement),
@@ -121,105 +150,158 @@ sector_plotly <- sector %>%
   select(current_placement, current_sector) %>% 
   rename(c(Employer = current_placement, Sector = current_sector)) %>% 
   group_by(Employer, Sector) %>% 
-  summarize("# of Alumni" = n())
+  summarize("# of Alumni" = n()) 
   
 ```
 
+## Static Plot
 
 ```{r}
+# calculate the number of alumni in each sector
 sector %>% 
   group_by(current_sector) %>% 
   summarize(count = n()) %>% 
   
-  ggplot(aes(y= reorder(current_sector, -count), x = count, fill = current_sector)) +
+  # plot
+  ggplot(aes(y= reorder(current_sector, count), x = count, fill = current_sector)) +
   geom_col() +
+  
+  # add count labels to bars
   geom_text(aes(label = count),
             color = "white",
             hjust = 1.5) +
+  
   labs(title = "Current (2026) Sector Distribution of MEDS Alumni",
-       x = "Number of positions",
-       y = " ",
-       fill = "Current sector") +
+       x = "Number of MEDS Alumni",
+       y = " ") +
+  
   theme_minimal() +
+  
+  # adjust x-axis range
+  xlim(c(0, 32)) + 
+  
+  # remove some grid lines, x-axis numbers (redunant with count labels), and legend
   theme(panel.grid.minor = element_blank(),
         panel.grid.major.y = element_blank(),
-        axis.text.x = element_blank()) +
+        axis.text.x = element_blank(),
+        legend.position = "none") +
+  
+  # fill bars based on palette created in Setup
   scale_fill_manual(values = sectors)
 ```
 
-```{r}
+## R Shiny Interactive Plot
 
-# ui set up
+```{r}
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                                  ui setup                                ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ui <- fluidPage(
   
   # easy fix to add some vertical space
   br(), 
   br(),
   
-  
   fluidRow(
-    column(7, plotlyOutput("bar"), height = "3500px"),
-    column(5, h4(textOutput("sector_label")), # sector label above table
+    column(8, plotlyOutput("bar"), height = "3500px"),
+    column(4, h4(textOutput("sector_label")), # sector label above table
       DTOutput("table"))
   )
 )
 
-# bar plot
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                                   server                                 ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+#............................bar plot............................
+
+# calculate number of alumni in each sector
 sector_counts <- sector %>% 
   group_by(current_sector) %>% 
   summarize(count = n())
 
 server <- function(input, output) {
+  
+  
   output$bar <- renderPlotly({
+    
+    # build bar plot
     plot_ly(sector_counts, x = ~count, y = ~reorder(current_sector, count), type = "bar",
             color = ~current_sector,
             colors = sectors,
-            source = "bar_click",
-            text = ~paste0(count, " Alumni"),
+            source = "bar_click", # source which bar is clicked by user
+            text = ~paste0(count, " Alumni"), 
             hoverinfo = "text") %>% 
       
-           layout(title = "Current (2026) Sector Distribution of MEDS Graduates",
-           xaxis = list(title = " ", 
+      # adjust layout
+           layout(
+             title = "Current (2026) Sector Distribution of MEDS Graduates",
+             xaxis = list(title = " ", 
                         range = c(0, 34)),
-           yaxis = list(title = "",
-                         ticklen = 10,
+             yaxis = list(title = "",
+                         ticklen = 10, # increase tick length and make clear (hack to adjusting x axis labels)
                          tickcolor = "transparent"),
            showlegend = FALSE,
-           height = "3500px"
+           height = "3500px" # plot and ui heightshave to match up to work
            # margin = list(t = 150)
  )})
   
-# set up clicked output to correspond to sector name
+  
+#...........set up clicked output to match sector name...........
   
   clicked_sector <- reactive({
+    
+    # save click value
     d <- event_data("plotly_click", source = "bar_click")
-    req(d) # gaurd so that table stays bank until a bar is clicked
-    d$y # the sector name lives in the y field of d
+    
+    # guard so that table stays bank until a bar is clicked
+    req(d) 
+    
+    # the sector name lives in the y field of d (if sector was on the x-axis, it would be d$x)
+    d$y 
   })
  
+#................add sector heading based on click...............
+  
 # sector label heading 
  output$sector_label <- renderText({
   req(clicked_sector())
   clicked_sector()
 }) 
-
-# create table  
+ 
+ 
+#.........................employer table.........................
 
   output$table <- renderDT({
     req(clicked_sector())
     
+    # assign sector color (from bar plot/sectors vector) to "color" variable
      color <- adjustcolor(sectors[clicked_sector()], alpha.f = 0.5)
     
-    datatable(sector_plotly[sector_plotly$Sector == clicked_sector(), ] %>% 
-    select(-Sector),  # drop it from the table since it's shown above now
-    rownames = FALSE, options = list(pageLength = 10, dom = 'rtip',
-                                     headerCallback = JS(sprintf(
+     # initialize table
+    datatable(
+      
+      sector_plotly[sector_plotly$Sector == clicked_sector(), ] %>% 
+        
+        # filter for only employer name (can choose keep other columns)
+          select(Employer),  
+    
+      # table details
+      rownames = FALSE, 
+      options = list(pageLength = 9, 
+                     dom = 'rtip', # remove search bar and length dropdown
+                     
+                     # use CSS to assign table header the sector color 
+                     headerCallback = JS(sprintf(
         "function(thead, data, start, end, display){
           $(thead).find('th').css('background-color', '%s');
         }", color))))
 })
 }
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                                  run app                                 ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 shinyApp(ui, server)
 ```
