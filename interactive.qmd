@@ -4,15 +4,33 @@ format: html
 ---
 
 ```{r}
+#| message: false
+#| warning: false
 library(tidyverse)
 library(shiny)
 library(plotly)
 library(DT)
+library(janitor)
+library(here)
+
+sectors <- c(
+  "Consulting" = "#264653",
+  "Corporate" = "#287271",
+  "Federal Government" = "#2a9d8f",
+  "Local Government" = "#8ab17d",
+  "Non-Profit/NGO" = "#e9c46a",
+  "Research/Education" = "#f4a261",
+  "State Government" = "#e76f51"
+)
 ```
 
 
 ```{r}
-data <- data %>% 
+#| message: false
+#| warning: false
+data <- read_csv(here("data", "meds_2020-26_placement_data.csv")) %>% 
+
+  clean_names() %>% 
   
   # replace "N/A" string with NA value, in placement columns
   mutate(across(initial_placement_job_title:fourth_placement_end_date, ~na_if(.x, "N/A"))) %>% 
@@ -84,6 +102,13 @@ sector <- sector %>%
          current_sector = ifelse(is.na(current_sector), initial_sector, current_sector))
 ```
 ```{r}
+# add current org as column
+sector <- sector %>% 
+  mutate(current_placement = fourth_placement,
+         current_placement = ifelse(is.na(current_placement), third_placement, current_placement),
+         current_placement = ifelse(is.na(current_placement), second_placement, current_placement),
+         current_placement = ifelse(is.na(current_placement), initial_placement, current_placement))
+
 # add current sector as a column
 sector <- sector %>% 
   mutate(current_sector = fourth_sector,
@@ -91,6 +116,17 @@ sector <- sector %>%
          current_sector = ifelse(is.na(current_sector), second_sector, current_sector),
          current_sector = ifelse(is.na(current_sector), initial_sector, current_sector))
 
+# create clean sector df for plotly interactive table
+sector_plotly <- sector %>% 
+  select(current_placement, current_sector) %>% 
+  rename(c(Employer = current_placement, Sector = current_sector)) %>% 
+  group_by(Employer, Sector) %>% 
+  summarize("# of Alumni" = n())
+  
+```
+
+
+```{r}
 sector %>% 
   group_by(current_sector) %>% 
   summarize(count = n()) %>% 
@@ -110,32 +146,79 @@ sector %>%
         axis.text.x = element_blank()) +
   scale_fill_manual(values = sectors)
 ```
+
 ```{r}
+
+# ui set up
 ui <- fluidPage(
-  plotlyOutput("bar"),
-  DTOutput("table")
+  
+  # easy fix to add some vertical space
+  br(), 
+  br(),
+  
+  
+  fluidRow(
+    column(7, plotlyOutput("bar"), height = "3500px"),
+    column(5, h4(textOutput("sector_label")), # sector label above table
+      DTOutput("table"))
+  )
 )
 
-sector_counts <-sector %>% 
+# bar plot
+
+sector_counts <- sector %>% 
   group_by(current_sector) %>% 
   summarize(count = n())
 
 server <- function(input, output) {
   output$bar <- renderPlotly({
-    plot_ly(sector_counts, x = ~current_sector, y = ~count, type = "bar",
-            source = "bar_click")
-  })
+    plot_ly(sector_counts, x = ~count, y = ~reorder(current_sector, count), type = "bar",
+            color = ~current_sector,
+            colors = sectors,
+            source = "bar_click",
+            text = ~paste0(count, " Alumni"),
+            hoverinfo = "text") %>% 
+      
+           layout(title = "Current (2026) Sector Distribution of MEDS Graduates",
+           xaxis = list(title = " ", 
+                        range = c(0, 34)),
+           yaxis = list(title = "",
+                         ticklen = 10,
+                         tickcolor = "transparent"),
+           showlegend = FALSE,
+           height = "3500px"
+           # margin = list(t = 150)
+ )})
+  
+# set up clicked output to correspond to sector name
   
   clicked_sector <- reactive({
     d <- event_data("plotly_click", source = "bar_click")
-    req(d)
-    d$x
+    req(d) # gaurd so that table stays bank until a bar is clicked
+    d$y # the sector name lives in the y field of d
   })
-  
+ 
+# sector label heading 
+ output$sector_label <- renderText({
+  req(clicked_sector())
+  clicked_sector()
+}) 
+
+# create table  
+
   output$table <- renderDT({
     req(clicked_sector())
-    sector[sector$current_sector == clicked_sector(), ]
-  })
+    
+     color <- adjustcolor(sectors[clicked_sector()], alpha.f = 0.5)
+    
+    datatable(sector_plotly[sector_plotly$Sector == clicked_sector(), ] %>% 
+    select(-Sector),  # drop it from the table since it's shown above now
+    rownames = FALSE, options = list(pageLength = 10, dom = 'rtip',
+                                     headerCallback = JS(sprintf(
+        "function(thead, data, start, end, display){
+          $(thead).find('th').css('background-color', '%s');
+        }", color))))
+})
 }
 
 shinyApp(ui, server)
